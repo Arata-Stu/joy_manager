@@ -27,27 +27,28 @@ public:
     prev_steer_inc_pressed_(false),
     prev_steer_dec_pressed_(false),
     prev_speed_inc_pressed_(false),
-    prev_speed_dec_pressed_(false)
+    prev_speed_dec_pressed_(false),
+    prev_scale_inc_pressed_(false),
+    prev_scale_dec_pressed_(false)
   {
     // --- パラメータ宣言＆取得 ---
-    declare_parameter<double>("speed_scale",        1.0);
-    declare_parameter<double>("steer_scale",        1.0);
-    declare_parameter<double>("offset_increment",   0.01);
-    declare_parameter<double>("max_steer_offset",   0.3);
-    declare_parameter<double>("min_steer_offset",  -0.3);
-    declare_parameter<double>("max_speed_offset",   1.0);
-    declare_parameter<double>("min_speed_offset",  -1.0);
+    declare_parameter<double>("speed_scale",      1.0);
+    declare_parameter<double>("steer_scale",      1.0);
+    declare_parameter<double>("offset_increment", 0.01);
+    declare_parameter<double>("max_steer_offset", 0.3);
+    declare_parameter<double>("min_steer_offset", -0.3);
+    declare_parameter<double>("max_speed_offset", 1.0);
+    declare_parameter<double>("min_speed_offset", -1.0);
 
-    declare_parameter<int>("joy_button_index",      2);
-    declare_parameter<int>("ack_button_index",      3);
-    declare_parameter<int>("start_button_index",    9);
-    declare_parameter<int>("stop_button_index",     8);
-    // D-pad は axes[6], axes[7] 固定
+    declare_parameter<int>("joy_button_index",   2);
+    declare_parameter<int>("ack_button_index",   3);
+    declare_parameter<int>("start_button_index", 9);
+    declare_parameter<int>("stop_button_index",  8);
 
-    declare_parameter<bool>("invert_speed",  true);
-    declare_parameter<bool>("invert_steer",  false);
+    declare_parameter<bool>("invert_speed", true);
+    declare_parameter<bool>("invert_steer", false);
 
-    declare_parameter<double>("timer_hz",     40.0);
+    declare_parameter<double>("timer_hz", 40.0);
 
     get_parameter("speed_scale",      speed_scale_);
     get_parameter("steer_scale",      steer_scale_);
@@ -57,14 +58,13 @@ public:
     get_parameter("max_speed_offset", max_speed_offset_);
     get_parameter("min_speed_offset", min_speed_offset_);
 
-    get_parameter("joy_button_index",  joy_button_index_);
-    get_parameter("ack_button_index",  ack_button_index_);
-    get_parameter("start_button_index",start_button_index_);
-    get_parameter("stop_button_index", stop_button_index_);
+    get_parameter("joy_button_index",   joy_button_index_);
+    get_parameter("ack_button_index",   ack_button_index_);
+    get_parameter("start_button_index", start_button_index_);
+    get_parameter("stop_button_index",  stop_button_index_);
 
     get_parameter("invert_speed",  invert_speed_);
     get_parameter("invert_steer",  invert_steer_);
-
     get_parameter("timer_hz",      timer_hz_);
 
     // --- サブスクライバ／パブリッシャ設定 ---
@@ -147,7 +147,6 @@ private:
     // Steer offset: →(–1.0) +, ←(+1.0) –
     bool steer_inc = (std::abs(a6 + 1.0) < 1e-3);
     bool steer_dec = (std::abs(a6 - 1.0) < 1e-3);
-
     if (steer_inc && !prev_steer_inc_pressed_) {
       steer_offset_ = std::min(steer_offset_ + offset_increment_, max_steer_offset_);
       steer_offset_ = std::round(steer_offset_ / offset_increment_) * offset_increment_;
@@ -157,7 +156,6 @@ private:
     } else if (!steer_inc) {
       prev_steer_inc_pressed_ = false;
     }
-
     if (steer_dec && !prev_steer_dec_pressed_) {
       steer_offset_ = std::max(steer_offset_ - offset_increment_, min_steer_offset_);
       steer_offset_ = std::round(steer_offset_ / offset_increment_) * offset_increment_;
@@ -171,7 +169,6 @@ private:
     // Speed offset: ↑(+1.0) +, ↓(–1.0) –
     bool speed_inc = (std::abs(a7 - 1.0) < 1e-3);
     bool speed_dec = (std::abs(a7 + 1.0) < 1e-3);
-
     if (speed_inc && !prev_speed_inc_pressed_) {
       speed_offset_ = std::min(speed_offset_ + offset_increment_, max_speed_offset_);
       speed_offset_ = std::round(speed_offset_ / offset_increment_) * offset_increment_;
@@ -181,7 +178,6 @@ private:
     } else if (!speed_inc) {
       prev_speed_inc_pressed_ = false;
     }
-
     if (speed_dec && !prev_speed_dec_pressed_) {
       speed_offset_ = std::max(speed_offset_ - offset_increment_, min_speed_offset_);
       speed_offset_ = std::round(speed_offset_ / offset_increment_) * offset_increment_;
@@ -190,6 +186,28 @@ private:
       prev_speed_dec_pressed_ = true;
     } else if (!speed_dec) {
       prev_speed_dec_pressed_ = false;
+    }
+
+    // --- 4) steer_scale の動的調整（R1/L1，連射防止，0.1刻み） ---
+    bool scale_inc = (msg->buttons.size() > 5 && msg->buttons[5] == 1); // R1
+    bool scale_dec = (msg->buttons.size() > 4 && msg->buttons[4] == 1); // L1
+
+    if (scale_inc && !prev_scale_inc_pressed_) {
+      steer_scale_ = std::round((steer_scale_ + 0.1) * 10.0) / 10.0;
+      if (steer_scale_ < 0.0) steer_scale_ = 0.0;
+      RCLCPP_INFO(get_logger(), "steer_scale = %.1f", steer_scale_);
+      prev_scale_inc_pressed_ = true;
+    } else if (!scale_inc) {
+      prev_scale_inc_pressed_ = false;
+    }
+
+    if (scale_dec && !prev_scale_dec_pressed_) {
+      steer_scale_ = std::max(steer_scale_ - 0.1, 0.0);
+      steer_scale_ = std::round(steer_scale_ * 10.0) / 10.0;
+      RCLCPP_INFO(get_logger(), "steer_scale = %.1f", steer_scale_);
+      prev_scale_dec_pressed_ = true;
+    } else if (!scale_dec) {
+      prev_scale_dec_pressed_ = false;
     }
   }
 
@@ -202,8 +220,8 @@ private:
   {
     ackermann_msgs::msg::AckermannDrive out;
     if (joy_active_) {
-      out.speed           = joy_speed_;
-      out.steering_angle  = joy_steer_;
+      out.speed          = joy_speed_;
+      out.steering_angle = joy_steer_;
     } else if (ack_active_) {
       out = last_autonomy_msg_;
     } else {
@@ -239,6 +257,7 @@ private:
   bool prev_start_pressed_, prev_stop_pressed_;
   bool prev_steer_inc_pressed_, prev_steer_dec_pressed_;
   bool prev_speed_inc_pressed_, prev_speed_dec_pressed_;
+  bool prev_scale_inc_pressed_, prev_scale_dec_pressed_;
 };
 
 int main(int argc, char * argv[])
