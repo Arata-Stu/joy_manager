@@ -23,7 +23,7 @@
     <!-- 自律走行　コマンド -->
     <remap from="/ackermann_cmd" to="/ackermann_cmd"/>
     <!-- jetracerへの入力 -->
-    <remap from="/jetracer/cmd_drive" to="/cmd_drive"/> 
+    <remap from="/jetracer/cmd_drive" to="/jetracer/cmd_drive"/> 
 
   </node>
 
