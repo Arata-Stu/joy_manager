@@ -73,19 +73,37 @@ private:
     ackermann_control_active_ = (msg->buttons[ack_button_index_] == 1);
 
     if (msg->buttons[increase_steer_button_index_] == 1) {
-      steer_offset_ = std::min(steer_offset_ + offset_increment_, max_steer_offset_);
-      RCLCPP_INFO(get_logger(), "Steer Offset Increased: %f", steer_offset_);
+        steer_offset_ = std::min(steer_offset_ + offset_increment_, max_steer_offset_);
+        RCLCPP_INFO(get_logger(), "Steer Offset Increased: %f", steer_offset_);
     }
     if (msg->buttons[decrease_steer_button_index_] == 1) {
-      steer_offset_ = std::max(steer_offset_ - offset_increment_, min_steer_offset_);
-      RCLCPP_INFO(get_logger(), "Steer Offset Decreased: %f", steer_offset_);
+        steer_offset_ = std::max(steer_offset_ - offset_increment_, min_steer_offset_);
+        RCLCPP_INFO(get_logger(), "Steer Offset Decreased: %f", steer_offset_);
     }
 
     if (joy_control_active_) {
-      current_drive_.steering_angle = (steer_inverted_ ? -msg->axes[0] : msg->axes[0]) + steer_offset_;
-      current_drive_.speed = speed_inverted_ ? -msg->axes[4] * speed_scale_ : msg->axes[4] * speed_scale_;
+        current_drive_.steering_angle = (steer_inverted_ ? -msg->axes[0] : msg->axes[0]) + steer_offset_;
+        current_drive_.speed = speed_inverted_ ? -msg->axes[4] * speed_scale_ : msg->axes[4] * speed_scale_;
     }
+
+    static bool previous_trigger_state = false;
+    bool current_trigger_state = (msg->buttons[start_axis_index_] == 1);
+
+    if (current_trigger_state && !previous_trigger_state) {
+        std_msgs::msg::Bool trigger_msg;
+        trigger_msg.data = true;
+        rosbag_trigger_pub_->publish(trigger_msg);
+        RCLCPP_INFO(get_logger(), "Rosbag recording started");
+    } else if (!current_trigger_state && previous_trigger_state) {
+        std_msgs::msg::Bool trigger_msg;
+        trigger_msg.data = false;
+        rosbag_trigger_pub_->publish(trigger_msg);
+        RCLCPP_INFO(get_logger(), "Rosbag recording stopped");
+    }
+
+    previous_trigger_state = current_trigger_state;
   }
+
 
   void ackermannCallback(const ackermann_msgs::msg::AckermannDrive::SharedPtr msg) {
     if (ackermann_control_active_) {
