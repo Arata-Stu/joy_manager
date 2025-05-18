@@ -8,7 +8,11 @@ using namespace std::placeholders;
 class JoyManagerNode : public rclcpp::Node {
 public:
   JoyManagerNode()
-  : Node("joy_manager_node")
+  : Node("joy_manager_node"),
+    previous_start_pressed_(false),
+    previous_stop_pressed_(false),
+    previous_increase_pressed_(false),
+    previous_decrease_pressed_(false)
   {
     // パラメータの宣言（デフォルト値）
     declare_parameter<double>("speed_scale", 1.0);
@@ -72,46 +76,45 @@ private:
     joy_control_active_ = (msg->buttons[joy_button_index_] == 1);
     ackermann_control_active_ = (msg->buttons[ack_button_index_] == 1);
 
-    if (msg->buttons[increase_steer_button_index_] == 1) {
+    // === Offsetの調整（連射防止） ===
+    bool current_increase_pressed = (msg->buttons[increase_steer_button_index_] == 1);
+    bool current_decrease_pressed = (msg->buttons[decrease_steer_button_index_] == 1);
+
+    if (current_increase_pressed && !previous_increase_pressed_) {
         steer_offset_ = std::min(steer_offset_ + offset_increment_, max_steer_offset_);
         RCLCPP_INFO(get_logger(), "Steer Offset Increased: %f", steer_offset_);
     }
-    if (msg->buttons[decrease_steer_button_index_] == 1) {
+
+    if (current_decrease_pressed && !previous_decrease_pressed_) {
         steer_offset_ = std::max(steer_offset_ - offset_increment_, min_steer_offset_);
         RCLCPP_INFO(get_logger(), "Steer Offset Decreased: %f", steer_offset_);
     }
 
-    if (joy_control_active_) {
-        current_drive_.steering_angle = (steer_inverted_ ? -msg->axes[0] : msg->axes[0]) + steer_offset_;
-        current_drive_.speed = speed_inverted_ ? -msg->axes[4] * speed_scale_ : msg->axes[4] * speed_scale_;
-    }
+    // 状態更新
+    previous_increase_pressed_ = current_increase_pressed;
+    previous_decrease_pressed_ = current_decrease_pressed;
 
-    // === 追加部分: Rosbag Triggerの処理 ===
-    static bool previous_start_pressed = false;
-    static bool previous_stop_pressed = false;
-
+    // === Rosbag Triggerの処理（連射防止） ===
     bool current_start_pressed = (msg->axes[start_axis_index_] == start_axis_value_);
     bool current_stop_pressed = (msg->axes[stop_axis_index_] == stop_axis_value_);
 
-    if (current_start_pressed && !previous_start_pressed) {
+    if (current_start_pressed && !previous_start_pressed_) {
         std_msgs::msg::Bool trigger_msg;
         trigger_msg.data = true;
         rosbag_trigger_pub_->publish(trigger_msg);
         RCLCPP_INFO(get_logger(), "Rosbag recording started");
     }
 
-    if (current_stop_pressed && !previous_stop_pressed) {
+    if (current_stop_pressed && !previous_stop_pressed_) {
         std_msgs::msg::Bool trigger_msg;
         trigger_msg.data = false;
         rosbag_trigger_pub_->publish(trigger_msg);
         RCLCPP_INFO(get_logger(), "Rosbag recording stopped");
     }
 
-    previous_start_pressed = current_start_pressed;
-    previous_stop_pressed = current_stop_pressed;
+    previous_start_pressed_ = current_start_pressed;
+    previous_stop_pressed_ = current_stop_pressed;
   }
-
-
 
   void ackermannCallback(const ackermann_msgs::msg::AckermannDrive::SharedPtr msg) {
     if (ackermann_control_active_) {
@@ -147,13 +150,18 @@ private:
   double start_axis_value_;
   bool speed_inverted_;
   bool steer_inverted_;
-
   double steer_offset_;
   double max_steer_offset_;
   double min_steer_offset_;
   double offset_increment_;
   int increase_steer_button_index_;
   int decrease_steer_button_index_;
+
+  // 新しく追加したメンバ
+  bool previous_start_pressed_;
+  bool previous_stop_pressed_;
+  bool previous_increase_pressed_;
+  bool previous_decrease_pressed_;
 };
 
 int main(int argc, char **argv) {
