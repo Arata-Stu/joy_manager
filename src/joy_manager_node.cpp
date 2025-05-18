@@ -127,26 +127,36 @@ private:
 
     // --- 2) joy 操作からの速度・ステアリング算出（joy_active_ 時のみ）---
     if (joy_active_) {
-    // speed: axes[1] に変更
-    double raw_speed = (msg->axes.size() > 1 ? msg->axes[1] : 0.0);
-    double raw_steer = (msg->axes.size() > 3 ? msg->axes[3] : 0.0);
+      // speed: axes[1] に変更
+      double raw_speed = (msg->axes.size() > 1 ? msg->axes[1] : 0.0);
+      double raw_steer = (msg->axes.size() > 3 ? msg->axes[3] : 0.0);
 
-    if (invert_speed_) raw_speed = -raw_speed;
-    if (invert_steer_) raw_steer = -raw_steer;
+      if (invert_speed_) raw_speed = -raw_speed;
+      if (invert_steer_) raw_steer = -raw_steer;
 
-    joy_speed_ = raw_speed * speed_scale_;
-    joy_steer_ = raw_steer * speed_scale_ + steer_offset_;
-  }
+      joy_speed_ = raw_speed * speed_scale_;
+      joy_steer_ = raw_steer * speed_scale_ + steer_offset_;
+    }
 
-    // --- 3) オフセット調整（連射防止付き。常に反応） ---
+    // 3) オフセット調整（連射防止付き。常に反応）
     bool inc = (increase_steer_button_index_ < (int)msg->buttons.size()
                 && msg->buttons[increase_steer_button_index_] == 1);
     bool dec = (decrease_steer_button_index_ < (int)msg->buttons.size()
                 && msg->buttons[decrease_steer_button_index_] == 1);
 
     if (inc && !prev_increase_pressed_) {
+      // 元の加算
       steer_offset_ = std::min(steer_offset_ + offset_increment_, max_steer_offset_);
-      RCLCPP_INFO(get_logger(), "steer_offset = %.3f", steer_offset_);
+
+      // 量子化：offset_increment_ の倍数に丸め
+      steer_offset_ = std::round(steer_offset_ / offset_increment_) * offset_increment_;
+
+      // ごく小さい値はゼロに
+      if (std::fabs(steer_offset_) < 1e-6) {
+        steer_offset_ = 0.0;
+      }
+
+      RCLCPP_INFO(get_logger(), "steer_offset = %.2f", steer_offset_);
       prev_increase_pressed_ = true;
     } else if (!inc) {
       prev_increase_pressed_ = false;
@@ -154,7 +164,13 @@ private:
 
     if (dec && !prev_decrease_pressed_) {
       steer_offset_ = std::max(steer_offset_ - offset_increment_, min_steer_offset_);
-      RCLCPP_INFO(get_logger(), "steer_offset = %.3f", steer_offset_);
+
+      steer_offset_ = std::round(steer_offset_ / offset_increment_) * offset_increment_;
+      if (std::fabs(steer_offset_) < 1e-6) {
+        steer_offset_ = 0.0;
+      }
+
+      RCLCPP_INFO(get_logger(), "steer_offset = %.2f", steer_offset_);
       prev_decrease_pressed_ = true;
     } else if (!dec) {
       prev_decrease_pressed_ = false;
