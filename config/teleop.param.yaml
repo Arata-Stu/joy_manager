@@ -1,0 +1,7 @@
+/**:
+  ros__parameters:
+    speed_scale: 1.0
+    timer_hz: 40.0
+    joy_button_index: 2
+    ack_button_index: 3
+     
