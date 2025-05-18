@@ -79,43 +79,9 @@ public:
 
 private:
   // コールバック
-  void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
+    void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
   {
-    // 1) joy と ackermann ボタン状態取得
-    bool joy_pressed = (joy_button_index_ < (int)msg->buttons.size()
-                        && msg->buttons[joy_button_index_] == 1);
-    bool ack_pressed = (ack_button_index_ < (int)msg->buttons.size()
-                        && msg->buttons[ack_button_index_] == 1);
-
-    // 優先度: ack > joy > none
-    if (ack_pressed) {
-      ack_active_ = true;
-      joy_active_ = false;
-    } else if (joy_pressed) {
-      joy_active_ = true;
-      ack_active_ = false;
-    } else {
-      joy_active_ = false;
-      ack_active_ = false;
-    }
-
-    // 2) joy 操作からの速度・ステアリング算出
-    if (joy_active_) {
-      double raw_speed = 0.0, raw_steer = 0.0;
-      if ((int)msg->axes.size() > 2) raw_speed = msg->axes[2];
-      if ((int)msg->axes.size() > 3) raw_steer = msg->axes[3];
-
-      if (invert_speed_) raw_speed = -raw_speed;
-      if (invert_steer_) raw_steer = -raw_steer;
-
-      double s = raw_speed * speed_scale_;
-      double st = raw_steer * speed_scale_ + steer_offset_;
-
-      joy_speed_ = s;
-      joy_steer_ = st;
-    }
-
-    // 3) trigger start/stop (連射防止付き)
+    // --- 0) トリガー start/stop 処理（joy_active に関わらず常に反応） ---
     bool curr_start = false, curr_stop = false;
     if ((int)msg->axes.size() > start_axis_index_
         && std::abs(msg->axes[start_axis_index_] - start_axis_value_) < 1e-3) {
@@ -142,7 +108,37 @@ private:
       prev_stop_pressed_ = false;
     }
 
-    // 4) steer_offset の増減（連射防止付き）
+    // --- 1) joy と ackermann ボタン状態取得 & モード切替 ---
+    bool joy_pressed = (joy_button_index_ < (int)msg->buttons.size()
+                        && msg->buttons[joy_button_index_] == 1);
+    bool ack_pressed = (ack_button_index_ < (int)msg->buttons.size()
+                        && msg->buttons[ack_button_index_] == 1);
+
+    if (ack_pressed) {
+      ack_active_ = true;
+      joy_active_ = false;
+    } else if (joy_pressed) {
+      joy_active_ = true;
+      ack_active_ = false;
+    } else {
+      joy_active_ = false;
+      ack_active_ = false;
+    }
+
+    // --- 2) joy 操作からの速度・ステアリング算出（joy_active_ 時のみ）---
+    if (joy_active_) {
+    // speed: axes[1] に変更
+    double raw_speed = (msg->axes.size() > 1 ? msg->axes[1] : 0.0);
+    double raw_steer = (msg->axes.size() > 3 ? msg->axes[3] : 0.0);
+
+    if (invert_speed_) raw_speed = -raw_speed;
+    if (invert_steer_) raw_steer = -raw_steer;
+
+    joy_speed_ = raw_speed * speed_scale_;
+    joy_steer_ = raw_steer * speed_scale_ + steer_offset_;
+  }
+
+    // --- 3) オフセット調整（連射防止付き。常に反応） ---
     bool inc = (increase_steer_button_index_ < (int)msg->buttons.size()
                 && msg->buttons[increase_steer_button_index_] == 1);
     bool dec = (decrease_steer_button_index_ < (int)msg->buttons.size()
@@ -164,6 +160,7 @@ private:
       prev_decrease_pressed_ = false;
     }
   }
+
 
   void ack_callback(const ackermann_msgs::msg::AckermannDrive::SharedPtr msg)
   {
