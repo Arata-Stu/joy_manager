@@ -131,9 +131,15 @@ private:
 
   void publishDrive() {
     if (joy_control_active_) {
-        // Joyモード: コントローラの入力をそのまま出力
-        current_drive_.steering_angle = steer_offset_;
-        current_drive_.speed = speed_scale_; // ここで速度を反映
+        // Joyモード: コントローラの入力を反映
+        current_drive_.steering_angle = msg_->axes[3] + steer_offset_;  // ステアリング + オフセット
+        current_drive_.speed = msg_->axes[2] * speed_scale_;            // 速度スケーリング
+        if (speed_inverted_) {
+            current_drive_.speed = -current_drive_.speed;
+        }
+        if (steer_inverted_) {
+            current_drive_.steering_angle = -current_drive_.steering_angle;
+        }
     } else if (ackermann_control_active_) {
         // アッカーマンモード: 外部コマンドをそのまま出力
         current_drive_.steering_angle += steer_offset_;
@@ -145,6 +151,7 @@ private:
 
     drive_pub_->publish(current_drive_);
   }
+
 
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
