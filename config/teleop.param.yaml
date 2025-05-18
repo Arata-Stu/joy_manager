@@ -10,6 +10,9 @@
     start_axis_index: 6
     start_axis_value: -1.0
 
+    invert_speed: false
+    invert_steer: false
+
 ## button index (dual shock 4)
 # 0: ×
 # 1: ○

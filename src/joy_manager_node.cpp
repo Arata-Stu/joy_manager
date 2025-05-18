@@ -20,9 +20,10 @@ public:
     start_axis_index_(7),
     start_axis_value_(1.0),
     previous_stop_pressed_(false),
-    previous_start_pressed_(false)
+    previous_start_pressed_(false),
+    speed_inverted_(false),
+    steer_inverted_(false)
   {
-    // パラメータ宣言
     declare_parameter<double>("speed_scale", speed_scale_);
     declare_parameter<double>("timer_hz", timer_hz_);
     declare_parameter<int>("joy_button_index", joy_button_index_);
@@ -31,8 +32,9 @@ public:
     declare_parameter<double>("stop_axis_value", stop_axis_value_);
     declare_parameter<int>("start_axis_index", start_axis_index_);
     declare_parameter<double>("start_axis_value", start_axis_value_);
+    declare_parameter<bool>("invert_speed", speed_inverted_);
+    declare_parameter<bool>("invert_steer", steer_inverted_);
 
-    // パラメータ取得
     get_parameter("speed_scale", speed_scale_);
     get_parameter("timer_hz", timer_hz_);
     get_parameter("joy_button_index", joy_button_index_);
@@ -41,8 +43,9 @@ public:
     get_parameter("stop_axis_value", stop_axis_value_);
     get_parameter("start_axis_index", start_axis_index_);
     get_parameter("start_axis_value", start_axis_value_);
+    get_parameter("invert_speed", speed_inverted_);
+    get_parameter("invert_steer", steer_inverted_);
 
-    // サブスクライバとパブリッシャの設定
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       "/joy", 10, std::bind(&JoyManagerNode::joyCallback, this, _1)
     );
@@ -59,7 +62,6 @@ public:
       "/rosbag2_recorder/trigger", 10
     );
 
-    // 定期パブリッシュ
     auto period = std::chrono::milliseconds(static_cast<int>(1000.0 / timer_hz_));
     timer_ = create_wall_timer(period, std::bind(&JoyManagerNode::publishDrive, this));
 
@@ -67,53 +69,36 @@ public:
   }
 
 private:
-  // Joy入力コールバック
   void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg) {
-    // Joy制御モードの切り替え
     joy_control_active_ = (msg->buttons[joy_button_index_] == 1);
     ackermann_control_active_ = (msg->buttons[ack_button_index_] == 1);
 
-    // --- 停止トリガーの発行 ---
     bool stop_pressed = (msg->axes.size() > (size_t)stop_axis_index_ && msg->axes[stop_axis_index_] == stop_axis_value_);
     if (stop_pressed && !previous_stop_pressed_) {
       std_msgs::msg::Bool trigger_msg;
       trigger_msg.data = false;
       rosbag_trigger_pub_->publish(trigger_msg);
-      RCLCPP_INFO(get_logger(), "Rosbag trigger: stop (axis[%d]==%.1f)", stop_axis_index_, stop_axis_value_);
     }
     previous_stop_pressed_ = stop_pressed;
 
-    // --- 開始トリガーの発行 ---
     bool start_pressed = (msg->axes.size() > (size_t)start_axis_index_ && msg->axes[start_axis_index_] == start_axis_value_);
     if (start_pressed && !previous_start_pressed_) {
       std_msgs::msg::Bool trigger_msg;
       trigger_msg.data = true;
       rosbag_trigger_pub_->publish(trigger_msg);
-      RCLCPP_INFO(get_logger(), "Rosbag trigger: start (axis[%d]==%.1f)", start_axis_index_, start_axis_value_);
     }
     previous_start_pressed_ = start_pressed;
 
-    // スピードスケール調整 (buttons 5/4)
-    if (msg->buttons.size() > 5 && msg->buttons[5] == 1) {
-      set_parameter(rclcpp::Parameter("speed_scale", speed_scale_ + 0.1));
-    }
-    if (msg->buttons.size() > 4 && msg->buttons[4] == 1) {
-      set_parameter(rclcpp::Parameter("speed_scale", speed_scale_ - 0.1));
-    }
-
-    // Joy 制御時ドライブコマンド設定
     if (joy_control_active_) {
-      current_drive_.steering_angle = msg->axes[0];
-      current_drive_.speed = msg->axes[4] * speed_scale_;
+      current_drive_.steering_angle = steer_inverted_ ? -msg->axes[0] : msg->axes[0];
+      current_drive_.speed = speed_inverted_ ? -msg->axes[4] * speed_scale_ : msg->axes[4] * speed_scale_;
     }
   }
 
-  // Ackermannコマンド受信
   void ackermannCallback(const ackermann_msgs::msg::AckermannDrive::SharedPtr msg) {
     if (ackermann_control_active_) current_drive_ = *msg;
   }
 
-  // 定期パブリッシュ
   void publishDrive() {
     if (!joy_control_active_ && !ackermann_control_active_) {
       current_drive_.steering_angle = 0.0;
@@ -122,7 +107,6 @@ private:
     drive_pub_->publish(current_drive_);
   }
 
-  // メンバ変数
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::Subscription<ackermann_msgs::msg::AckermannDrive>::SharedPtr ack_sub_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDrive>::SharedPtr drive_pub_;
@@ -141,6 +125,8 @@ private:
   double start_axis_value_;
   bool previous_stop_pressed_;
   bool previous_start_pressed_;
+  bool speed_inverted_;
+  bool steer_inverted_;
 };
 
 int main(int argc, char **argv) {
