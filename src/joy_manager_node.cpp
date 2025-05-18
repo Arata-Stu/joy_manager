@@ -10,7 +10,6 @@ public:
         : Node("joy_manager_node"), 
           joy_control_active_(false), 
           ackermann_control_active_(false),
-          steering_scale_(1.0),
           speed_scale_(1.0) {
 
         // サブスクリプション
@@ -22,40 +21,56 @@ public:
 
         // パブリッシャー
         drive_publisher_ = this->create_publisher<ackermann_msgs::msg::AckermannDrive>(
-            "/cmd_drive", 10);
+            "/jetracer/cmd_drive", 10);
 
         // タイマー
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(100),
             std::bind(&JoyManagerNode::publishDrive, this));
 
-        // 動的パラメータ
-        this->declare_parameter("steering_scale", 1.0);
+        // 動的パラメータ（speed_scale のみ）
         this->declare_parameter("speed_scale", 1.0);
+        parameter_callback_handle_ = this->add_on_set_parameters_callback(
+            std::bind(&JoyManagerNode::onParameterEvent, this, std::placeholders::_1));
 
         RCLCPP_INFO(this->get_logger(), "JoyManagerNode has been started.");
     }
 
 private:
+    rcl_interfaces::msg::SetParametersResult onParameterEvent(
+        const std::vector<rclcpp::Parameter> &params) {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+        for (const auto &param : params) {
+            if (param.get_name() == "speed_scale") {
+                double new_scale = param.as_double();
+                if (new_scale != speed_scale_) {
+                    speed_scale_ = std::max(0.1, new_scale);
+                    RCLCPP_INFO(this->get_logger(), "Speed Scale changed: %.2f", speed_scale_);
+                }
+            }
+        }
+        return result;
+    }
+
     void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg) {
-        joy_control_active_ = msg->buttons[0] == 1;
-        ackermann_control_active_ = msg->buttons[1] == 1;
+        // コントロールモード切替
+        joy_control_active_ = (msg->buttons[0] == 1);
+        ackermann_control_active_ = (msg->buttons[1] == 1);
 
-        // スケール調整
-        if (msg->buttons[2] == 1) steering_scale_ += 0.1;
-        if (msg->buttons[3] == 1) steering_scale_ -= 0.1;
-        if (msg->buttons[4] == 1) speed_scale_ += 0.1;
-        if (msg->buttons[5] == 1) speed_scale_ -= 0.1;
+        // speed スケール調整（ボタン6,5）
+        if (msg->buttons[6] == 1) {
+            double new_scale = speed_scale_ + 0.1;
+            this->set_parameter(rclcpp::Parameter("speed_scale", new_scale));
+        }
+        if (msg->buttons[5] == 1) {
+            double new_scale = speed_scale_ - 0.1;
+            this->set_parameter(rclcpp::Parameter("speed_scale", new_scale));
+        }
 
-        // 最小値を制限
-        steering_scale_ = std::max(0.1, steering_scale_);
-        speed_scale_ = std::max(0.1, speed_scale_);
-
-        RCLCPP_INFO(this->get_logger(), "Steering Scale: %.2f, Speed Scale: %.2f", steering_scale_, speed_scale_);
-
-        // ジョイパッドの値にスケールを掛ける
+        // joy コントロール時の drive 設定
         if (joy_control_active_) {
-            current_drive_.steering_angle = msg->axes[0] * steering_scale_;
+            current_drive_.steering_angle = msg->axes[0];
             current_drive_.speed = msg->axes[1] * speed_scale_;
         }
     }
@@ -74,22 +89,16 @@ private:
         drive_publisher_->publish(current_drive_);
     }
 
-    // ROS2パラメータコールバック
-    void updateParameters() {
-        this->get_parameter("steering_scale", steering_scale_);
-        this->get_parameter("speed_scale", speed_scale_);
-    }
-
     // メンバ変数
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_subscriber_;
     rclcpp::Subscription<ackermann_msgs::msg::AckermannDrive>::SharedPtr ackermann_subscriber_;
     rclcpp::Publisher<ackermann_msgs::msg::AckermannDrive>::SharedPtr drive_publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
+    OnSetParametersCallbackHandle::SharedPtr parameter_callback_handle_;
 
     ackermann_msgs::msg::AckermannDrive current_drive_;
     bool joy_control_active_;
     bool ackermann_control_active_;
-    double steering_scale_;
     double speed_scale_;
 };
 
