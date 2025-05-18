@@ -86,23 +86,31 @@ private:
         current_drive_.speed = speed_inverted_ ? -msg->axes[4] * speed_scale_ : msg->axes[4] * speed_scale_;
     }
 
-    static bool previous_trigger_state = false;
-    bool current_trigger_state = (msg->buttons[start_axis_index_] == 1);
+    // === 追加部分: Rosbag Triggerの処理 ===
+    static bool previous_start_pressed = false;
+    static bool previous_stop_pressed = false;
 
-    if (current_trigger_state && !previous_trigger_state) {
+    bool current_start_pressed = (msg->axes[start_axis_index_] == start_axis_value_);
+    bool current_stop_pressed = (msg->axes[stop_axis_index_] == stop_axis_value_);
+
+    if (current_start_pressed && !previous_start_pressed) {
         std_msgs::msg::Bool trigger_msg;
         trigger_msg.data = true;
         rosbag_trigger_pub_->publish(trigger_msg);
         RCLCPP_INFO(get_logger(), "Rosbag recording started");
-    } else if (!current_trigger_state && previous_trigger_state) {
+    }
+
+    if (current_stop_pressed && !previous_stop_pressed) {
         std_msgs::msg::Bool trigger_msg;
         trigger_msg.data = false;
         rosbag_trigger_pub_->publish(trigger_msg);
         RCLCPP_INFO(get_logger(), "Rosbag recording stopped");
     }
 
-    previous_trigger_state = current_trigger_state;
+    previous_start_pressed = current_start_pressed;
+    previous_stop_pressed = current_stop_pressed;
   }
+
 
 
   void ackermannCallback(const ackermann_msgs::msg::AckermannDrive::SharedPtr msg) {
