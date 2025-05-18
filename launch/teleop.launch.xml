@@ -25,6 +25,9 @@
     <!-- jetracerへの入力 -->
     <remap from="/jetracer/cmd_drive" to="/jetracer/cmd_drive"/> 
 
+    <remap from="/rosbag2_recorder/start" to="/rosbag2_recorder/start"/>
+    <remap from="/rosbag2_recorder/stop" to="/rosbag2_recorder/stop"/>
+
   </node>
 
   

@@ -5,6 +5,11 @@
     joy_button_index: 2
     ack_button_index: 3
 
+    stop_axis_index: 6
+    stop_axis_value: 1.0
+    start_axis_index: 6
+    start_axis_value: -1.0
+
 ## button index (dual shock 4)
 # 0: ×
 # 1: ○
@@ -19,3 +24,9 @@
 # 10: home
 # 11: L3
 # 12: R3
+
+## axes index (dual shock 4)
+# →: axes 6 == -1.0
+# ←: axes 6 == 1.0
+# ↑: axes 7 == 1.0
+# ↓: axes 7 == -1.0
