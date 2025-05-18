@@ -112,6 +112,12 @@ private:
         RCLCPP_INFO(get_logger(), "Rosbag recording stopped");
     }
 
+    const double epsilon = 1e-4; // 誤差の許容範囲
+    if (std::abs(steer_offset_) < epsilon) {
+        steer_offset_ = 0.0;
+        RCLCPP_INFO(get_logger(), "Steer Offset was close to zero. Adjusted to 0.0");
+    }
+
     previous_start_pressed_ = current_start_pressed;
     previous_stop_pressed_ = current_stop_pressed;
   }
