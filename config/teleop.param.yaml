@@ -16,7 +16,7 @@
     increase_steer_button_index: 7
     decrease_steer_button_index: 6
     max_steer_offset: 0.3
-    min_steer_offset: 0.0
+    min_steer_offset: -0.3
     offset_increment: 0.01
 
 ## button index (dual shock 4)
