@@ -1,4 +1,5 @@
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp/node_interfaces/node_parameters_interface.hpp"
 #include "sensor_msgs/msg/joy.hpp"
 #include "ackermann_msgs/msg/ackermann_drive.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -62,7 +63,7 @@ public:
     timer_ = create_wall_timer(period, std::bind(&JoyManagerNode::publishDrive, this));
 
     // パラメータコールバック
-    param_cb_handle_ = add_on_set_parameters_callback(
+    param_cb_handle_ = this->add_on_set_parameters_callback(
       std::bind(&JoyManagerNode::onParameterEvent, this, _1)
     );
 
@@ -174,7 +175,7 @@ private:
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDrive>::SharedPtr drive_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rosbag_trigger_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
 
   ackermann_msgs::msg::AckermannDrive current_drive_;
   bool joy_control_active_;
