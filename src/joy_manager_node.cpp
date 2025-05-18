@@ -18,7 +18,9 @@ public:
     stop_axis_index_(7),
     stop_axis_value_(-1.0),
     start_axis_index_(7),
-    start_axis_value_(1.0)
+    start_axis_value_(1.0),
+    previous_stop_pressed_(false),
+    previous_start_pressed_(false)
   {
     // パラメータ宣言
     declare_parameter<double>("speed_scale", speed_scale_);
@@ -71,20 +73,25 @@ private:
     joy_control_active_ = (msg->buttons[joy_button_index_] == 1);
     ackermann_control_active_ = (msg->buttons[ack_button_index_] == 1);
 
-    // トリガーの発行
-    if (msg->axes.size() > (size_t)stop_axis_index_ && msg->axes[stop_axis_index_] == stop_axis_value_) {
+    // --- 停止トリガーの発行 ---
+    bool stop_pressed = (msg->axes.size() > (size_t)stop_axis_index_ && msg->axes[stop_axis_index_] == stop_axis_value_);
+    if (stop_pressed && !previous_stop_pressed_) {
       std_msgs::msg::Bool trigger_msg;
-      trigger_msg.data = false;  // 停止トリガー
+      trigger_msg.data = false;
       rosbag_trigger_pub_->publish(trigger_msg);
       RCLCPP_INFO(get_logger(), "Rosbag trigger: stop (axis[%d]==%.1f)", stop_axis_index_, stop_axis_value_);
     }
+    previous_stop_pressed_ = stop_pressed;
 
-    if (msg->axes.size() > (size_t)start_axis_index_ && msg->axes[start_axis_index_] == start_axis_value_) {
+    // --- 開始トリガーの発行 ---
+    bool start_pressed = (msg->axes.size() > (size_t)start_axis_index_ && msg->axes[start_axis_index_] == start_axis_value_);
+    if (start_pressed && !previous_start_pressed_) {
       std_msgs::msg::Bool trigger_msg;
-      trigger_msg.data = true;  // 開始トリガー
+      trigger_msg.data = true;
       rosbag_trigger_pub_->publish(trigger_msg);
       RCLCPP_INFO(get_logger(), "Rosbag trigger: start (axis[%d]==%.1f)", start_axis_index_, start_axis_value_);
     }
+    previous_start_pressed_ = start_pressed;
 
     // スピードスケール調整 (buttons 5/4)
     if (msg->buttons.size() > 5 && msg->buttons[5] == 1) {
@@ -132,6 +139,8 @@ private:
   double stop_axis_value_;
   int start_axis_index_;
   double start_axis_value_;
+  bool previous_stop_pressed_;
+  bool previous_start_pressed_;
 };
 
 int main(int argc, char **argv) {
