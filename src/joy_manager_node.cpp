@@ -1,5 +1,4 @@
 #include "rclcpp/rclcpp.hpp"
-#include "rclcpp/node_interfaces/node_parameters_interface.hpp"
 #include "sensor_msgs/msg/joy.hpp"
 #include "ackermann_msgs/msg/ackermann_drive.hpp"
 #include "std_msgs/msg/bool.hpp"
@@ -12,7 +11,6 @@ public:
   : Node("joy_manager_node"),
     joy_control_active_(false),
     ackermann_control_active_(false),
-    recording_stopped_(false),
     speed_scale_(1.0),
     timer_hz_(100.0),
     joy_button_index_(2),
@@ -42,103 +40,51 @@ public:
     get_parameter("start_axis_index", start_axis_index_);
     get_parameter("start_axis_value", start_axis_value_);
 
-    // サブスクライバとパブリッシャ
+    // サブスクライバとパブリッシャの設定
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       "/joy", 10, std::bind(&JoyManagerNode::joyCallback, this, _1)
     );
+
     ack_sub_ = create_subscription<ackermann_msgs::msg::AckermannDrive>(
       "/ackermann_cmd", 10, std::bind(&JoyManagerNode::ackermannCallback, this, _1)
     );
+
     drive_pub_ = create_publisher<ackermann_msgs::msg::AckermannDrive>(
       "/jetracer/cmd_drive", 10
     );
-    
-    // Rosbag trigger publisher (Bool)
+
     rosbag_trigger_pub_ = create_publisher<std_msgs::msg::Bool>(
       "/rosbag2_recorder/trigger", 10
     );
 
-    // タイマー
+    // 定期パブリッシュ
     auto period = std::chrono::milliseconds(static_cast<int>(1000.0 / timer_hz_));
     timer_ = create_wall_timer(period, std::bind(&JoyManagerNode::publishDrive, this));
 
-    // パラメータコールバック
-    param_cb_handle_ = this->add_on_set_parameters_callback(
-      std::bind(&JoyManagerNode::onParameterEvent, this, _1)
-    );
-
-    RCLCPP_INFO(get_logger(),
-      "JoyManagerNode started: timer_hz=%.1f, joy_btn=%d, ack_btn=%d, stop_axis=%d(%.1f), start_axis=%d(%.1f)",
-      timer_hz_, joy_button_index_, ack_button_index_,
-      stop_axis_index_, stop_axis_value_, start_axis_index_, start_axis_value_
-    );
+    RCLCPP_INFO(get_logger(), "JoyManagerNode started");
   }
 
 private:
-  // パラメータ変更コールバック
-  rcl_interfaces::msg::SetParametersResult onParameterEvent(
-    const std::vector<rclcpp::Parameter> &params)
-  {
-    rcl_interfaces::msg::SetParametersResult result;
-    result.successful = true;
-    for (const auto &p : params) {
-      if (p.get_name() == "speed_scale") {
-        speed_scale_ = std::max(0.1, p.as_double());
-        RCLCPP_INFO(get_logger(), "Speed scale updated: %.2f", speed_scale_);
-      } else if (p.get_name() == "timer_hz") {
-        timer_hz_ = p.as_double();
-        timer_->cancel();
-        timer_ = create_wall_timer(
-          std::chrono::milliseconds(int(1000.0/timer_hz_)),
-          std::bind(&JoyManagerNode::publishDrive, this)
-        );
-        RCLCPP_INFO(get_logger(), "Timer Hz updated: %.1f", timer_hz_);
-      } else if (p.get_name() == "joy_button_index") {
-        joy_button_index_ = p.as_int();
-        RCLCPP_INFO(get_logger(), "Joy button index updated: %d", joy_button_index_);
-      } else if (p.get_name() == "ack_button_index") {
-        ack_button_index_ = p.as_int();
-        RCLCPP_INFO(get_logger(), "Ackermann button index updated: %d", ack_button_index_);
-      } else if (p.get_name() == "stop_axis_index") {
-        stop_axis_index_ = p.as_int();
-        RCLCPP_INFO(get_logger(), "Stop axis index updated: %d", stop_axis_index_);
-      } else if (p.get_name() == "stop_axis_value") {
-        stop_axis_value_ = p.as_double();
-        RCLCPP_INFO(get_logger(), "Stop axis value updated: %.1f", stop_axis_value_);
-      } else if (p.get_name() == "start_axis_index") {
-        start_axis_index_ = p.as_int();
-        RCLCPP_INFO(get_logger(), "Start axis index updated: %d", start_axis_index_);
-      } else if (p.get_name() == "start_axis_value") {
-        start_axis_value_ = p.as_double();
-        RCLCPP_INFO(get_logger(), "Start axis value updated: %.1f", start_axis_value_);
-      }
-    }
-    return result;
-  }
-
   // Joy入力コールバック
   void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg) {
-    // Rosbag trigger (Bool メッセージを publish)
-    if (msg->axes.size() > (size_t)stop_axis_index_ &&
-        msg->axes[stop_axis_index_] == stop_axis_value_ && !recording_stopped_) {
+    // Joy制御モードの切り替え
+    joy_control_active_ = (msg->buttons[joy_button_index_] == 1);
+    ackermann_control_active_ = (msg->buttons[ack_button_index_] == 1);
+
+    // トリガーの発行
+    if (msg->axes.size() > (size_t)stop_axis_index_ && msg->axes[stop_axis_index_] == stop_axis_value_) {
       std_msgs::msg::Bool trigger_msg;
       trigger_msg.data = false;  // 停止トリガー
       rosbag_trigger_pub_->publish(trigger_msg);
-      recording_stopped_ = true;
       RCLCPP_INFO(get_logger(), "Rosbag trigger: stop (axis[%d]==%.1f)", stop_axis_index_, stop_axis_value_);
     }
-    if (msg->axes.size() > (size_t)start_axis_index_ &&
-        msg->axes[start_axis_index_] == start_axis_value_ && recording_stopped_) {
+
+    if (msg->axes.size() > (size_t)start_axis_index_ && msg->axes[start_axis_index_] == start_axis_value_) {
       std_msgs::msg::Bool trigger_msg;
       trigger_msg.data = true;  // 開始トリガー
       rosbag_trigger_pub_->publish(trigger_msg);
-      recording_stopped_ = false;
       RCLCPP_INFO(get_logger(), "Rosbag trigger: start (axis[%d]==%.1f)", start_axis_index_, start_axis_value_);
     }
-
-    // ドライブ制御モード切替
-    joy_control_active_ = (msg->buttons[joy_button_index_] == 1);
-    ackermann_control_active_ = (msg->buttons[ack_button_index_] == 1);
 
     // スピードスケール調整 (buttons 5/4)
     if (msg->buttons.size() > 5 && msg->buttons[5] == 1) {
@@ -169,18 +115,15 @@ private:
     drive_pub_->publish(current_drive_);
   }
 
-  // メンバ
+  // メンバ変数
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::Subscription<ackermann_msgs::msg::AckermannDrive>::SharedPtr ack_sub_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDrive>::SharedPtr drive_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr rosbag_trigger_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
-
   ackermann_msgs::msg::AckermannDrive current_drive_;
   bool joy_control_active_;
   bool ackermann_control_active_;
-  bool recording_stopped_;
   double speed_scale_;
   double timer_hz_;
   int joy_button_index_;
