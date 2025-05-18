@@ -96,11 +96,11 @@ private:
         ackermann_control_active_ = (msg->buttons[ack_button_index_] == 1);
 
         // speed スケール調整
-        if (msg->buttons[6] == 1) {
+        if (msg->buttons[5] == 1) {
             double new_scale = speed_scale_ + 0.1;
             this->set_parameter(rclcpp::Parameter("speed_scale", new_scale));
         }
-        if (msg->buttons[5] == 1) {
+        if (msg->buttons[4] == 1) {
             double new_scale = speed_scale_ - 0.1;
             this->set_parameter(rclcpp::Parameter("speed_scale", new_scale));
         }
