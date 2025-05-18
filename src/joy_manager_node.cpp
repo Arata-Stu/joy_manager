@@ -25,7 +25,7 @@ public:
 
         // タイマー
         timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(100),
+            std::chrono::milliseconds(10),
             std::bind(&JoyManagerNode::publishDrive, this));
 
         // 動的パラメータ（speed_scale のみ）
@@ -71,7 +71,7 @@ private:
         // joy コントロール時の drive 設定
         if (joy_control_active_) {
             current_drive_.steering_angle = msg->axes[0];
-            current_drive_.speed = msg->axes[1] * speed_scale_;
+            current_drive_.speed = msg->axes[4] * speed_scale_;
         }
     }
 
