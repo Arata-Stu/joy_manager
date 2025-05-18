@@ -130,12 +130,22 @@ private:
   }
 
   void publishDrive() {
-    if (!joy_control_active_ && !ackermann_control_active_) {
-      current_drive_.steering_angle = steer_offset_;
-      current_drive_.speed = 0.0;
+    if (joy_control_active_) {
+        // Joyモード: コントローラの入力をそのまま出力
+        current_drive_.steering_angle = steer_offset_;
+        current_drive_.speed = speed_scale_; // ここで速度を反映
+    } else if (ackermann_control_active_) {
+        // アッカーマンモード: 外部コマンドをそのまま出力
+        current_drive_.steering_angle += steer_offset_;
+    } else {
+        // どちらもアクティブでない場合: 停止
+        current_drive_.steering_angle = 0.0;
+        current_drive_.speed = 0.0;
     }
+
     drive_pub_->publish(current_drive_);
   }
+
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::Subscription<ackermann_msgs::msg::AckermannDrive>::SharedPtr ack_sub_;
