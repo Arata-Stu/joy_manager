@@ -55,8 +55,8 @@ private:
 
     void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg) {
         // コントロールモード切替
-        joy_control_active_ = (msg->buttons[0] == 1);
-        ackermann_control_active_ = (msg->buttons[1] == 1);
+        joy_control_active_ = (msg->buttons[2] == 1);
+        ackermann_control_active_ = (msg->buttons[3] == 1);
 
         // speed スケール調整（ボタン6,5）
         if (msg->buttons[6] == 1) {
