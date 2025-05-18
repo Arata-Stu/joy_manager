@@ -13,6 +13,10 @@
     invert_speed: false
     invert_steer: false
 
+    max_steer_offset: 0.2
+    min_steer_offset: 0.2
+    offset_increment: 0.01
+
 ## button index (dual shock 4)
 # 0: ×
 # 1: ○

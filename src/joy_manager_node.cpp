@@ -44,20 +44,6 @@ public:
     declare_parameter<double>("min_steer_offset", min_steer_offset_);
     declare_parameter<double>("offset_increment", offset_increment_);
 
-    get_parameter("speed_scale", speed_scale_);
-    get_parameter("timer_hz", timer_hz_);
-    get_parameter("joy_button_index", joy_button_index_);
-    get_parameter("ack_button_index", ack_button_index_);
-    get_parameter("stop_axis_index", stop_axis_index_);
-    get_parameter("stop_axis_value", stop_axis_value_);
-    get_parameter("start_axis_index", start_axis_index_);
-    get_parameter("start_axis_value", start_axis_value_);
-    get_parameter("invert_speed", speed_inverted_);
-    get_parameter("invert_steer", steer_inverted_);
-    get_parameter("max_steer_offset", max_steer_offset_);
-    get_parameter("min_steer_offset", min_steer_offset_);
-    get_parameter("offset_increment", offset_increment_);
-
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       "/joy", 10, std::bind(&JoyManagerNode::joyCallback, this, _1)
     );
@@ -88,9 +74,11 @@ private:
     // Steer offset adjustment
     if (msg->buttons[increase_steer_button_index_] == 1) {
       steer_offset_ = std::min(steer_offset_ + offset_increment_, max_steer_offset_);
+      RCLCPP_INFO(get_logger(), "Steer Offset Increased: %f", steer_offset_);
     }
     if (msg->buttons[decrease_steer_button_index_] == 1) {
       steer_offset_ = std::max(steer_offset_ - offset_increment_, min_steer_offset_);
+      RCLCPP_INFO(get_logger(), "Steer Offset Decreased: %f", steer_offset_);
     }
 
     bool stop_pressed = (msg->axes.size() > (size_t)stop_axis_index_ && msg->axes[stop_axis_index_] == stop_axis_value_);
@@ -110,19 +98,22 @@ private:
     previous_start_pressed_ = start_pressed;
 
     if (joy_control_active_) {
-      current_drive_.steering_angle = steer_inverted_ ? -msg->axes[0] : msg->axes[0];
-      current_drive_.steering_angle += steer_offset_;  // <-- オフセットを追加
+      current_drive_.steering_angle = (steer_inverted_ ? -msg->axes[0] : msg->axes[0]) + steer_offset_;
       current_drive_.speed = speed_inverted_ ? -msg->axes[4] * speed_scale_ : msg->axes[4] * speed_scale_;
     }
   }
 
   void ackermannCallback(const ackermann_msgs::msg::AckermannDrive::SharedPtr msg) {
-    if (ackermann_control_active_) current_drive_ = *msg;
+    if (ackermann_control_active_) {
+      current_drive_ = *msg;
+      // オフセットの適用
+      current_drive_.steering_angle += steer_offset_;
+    }
   }
 
   void publishDrive() {
     if (!joy_control_active_ && !ackermann_control_active_) {
-      current_drive_.steering_angle = 0.0;
+      current_drive_.steering_angle = steer_offset_;  // オフセットだけ残す
       current_drive_.speed = 0.0;
     }
     drive_pub_->publish(current_drive_);
