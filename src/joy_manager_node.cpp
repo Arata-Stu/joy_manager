@@ -135,7 +135,7 @@ private:
     // --- 2) joy 操作からの速度・ステアリング算出（joy_active_ 時のみ）---
     if (joy_active_) {
       double raw_speed = (msg->axes.size() > 1 ? msg->axes[1] : 0.0);
-      double raw_steer = (msg->axes.size() > 3 ? msg->axes[3] : 0.0);
+      double raw_steer = (msg->axes.size() > 2 ? msg->axes[2] : 0.0);
 
       if (invert_speed_) raw_speed = -raw_speed;
       if (invert_steer_) raw_steer = -raw_steer;

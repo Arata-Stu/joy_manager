@@ -6,8 +6,8 @@
     timer_hz: 40.0
 
     # --- モード切替ボタン ---
-    joy_button_index: 2        # △ボタンで手動モード
-    ack_button_index: 3        # □ボタンで自律モード
+    joy_button_index: 3        # △ボタンで手動モード
+    ack_button_index: 0        # □ボタンで自律モード
 
     # --- start/stop トリガボタン ---
     start_button_index: 7      # R2 ボタンで start=true
