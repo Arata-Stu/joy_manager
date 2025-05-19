@@ -39,6 +39,8 @@ public:
     declare_parameter<double>("min_steer_offset", -0.3);
     declare_parameter<double>("max_speed_offset", 1.0);
     declare_parameter<double>("min_speed_offset", -1.0);
+    declare_parameter<double>("initial_steer_offset", 0.0);
+    declare_parameter<double>("initial_speed_offset", 0.0);
 
     declare_parameter<int>("joy_button_index",   2);
     declare_parameter<int>("ack_button_index",   3);
@@ -57,6 +59,8 @@ public:
     get_parameter("min_steer_offset", min_steer_offset_);
     get_parameter("max_speed_offset", max_speed_offset_);
     get_parameter("min_speed_offset", min_speed_offset_);
+    get_parameter("initial_steer_offset", steer_offset_);
+    get_parameter("initial_speed_offset", speed_offset_);
 
     get_parameter("joy_button_index",   joy_button_index_);
     get_parameter("ack_button_index",   ack_button_index_);

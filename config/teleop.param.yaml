@@ -18,6 +18,8 @@
     invert_steer: false
 
     # --- オフセット調整 ---
+    initial_speed_offset: 0.0
+    initial_steer_offset: 0.14
     offset_increment: 0.01
     max_steer_offset: 0.3
     min_steer_offset: -0.3
