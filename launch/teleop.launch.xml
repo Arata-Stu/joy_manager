@@ -24,11 +24,14 @@
     <remap from="/ackermann_cmd" to="/ackermann_cmd"/>
     <!-- jetracerへの入力 -->
     <remap from="/cmd_drive" to="/jetracer/cmd_drive"/> 
-
+    <!-- rosbag制御トリガ -->
     <remap from="/rosbag2_recorder/trigger" to="/rosbag2_recorder/trigger"/>
+    <!-- offset トリガ -->
+    <remap from="/steer_offset_inc" to="/steer_offset_inc"/>
+    <remap from="/steer_offset_dec" to="/steer_offset_dec"/>
+    <remap from="/speed_offset_inc" to="/speed_offset_inc"/>
+    <remap from="/speed_offset_dec" to="/speed_offset_dec"/>
     
-
   </node>
 
-  
 </launch>
