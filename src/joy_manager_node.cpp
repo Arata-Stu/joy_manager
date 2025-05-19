@@ -71,6 +71,9 @@ public:
     get_parameter("invert_steer",  invert_steer_);
     get_parameter("timer_hz",      timer_hz_);
 
+    last_autonomy_msg_.speed = 0.0;
+    last_autonomy_msg_.steering_angle = 0.0;
+
     // --- サブスクライバ／パブリッシャ設定 ---
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       "/joy", 10, std::bind(&JoyManagerNode::joy_callback, this, _1));
@@ -198,7 +201,7 @@ private:
 
     if (scale_inc && !prev_scale_inc_pressed_) {
       steer_scale_ = std::round((steer_scale_ + 0.1) * 10.0) / 10.0;
-      if (steer_scale_ < 0.0) steer_scale_ = 0.0;
+      if (steer_scale_ < 0.1) steer_scale_ = 0.1;
       RCLCPP_INFO(get_logger(), "steer_scale = %.1f", steer_scale_);
       prev_scale_inc_pressed_ = true;
     } else if (!scale_inc) {
@@ -218,6 +221,7 @@ private:
   void ack_callback(const ackermann_msgs::msg::AckermannDrive::SharedPtr msg)
   {
     last_autonomy_msg_ = *msg;
+    ack_received_ = true;
   }
 
   void timer_callback()
