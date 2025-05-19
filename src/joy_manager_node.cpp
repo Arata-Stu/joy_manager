@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
@@ -20,8 +19,6 @@ public:
     ack_active_(false),
     joy_speed_(0.0),
     joy_steer_(0.0),
-    steer_offset_(0.0),
-    speed_offset_(0.0),
     prev_start_pressed_(false),
     prev_stop_pressed_(false),
     prev_steer_inc_pressed_(false),
@@ -32,15 +29,8 @@ public:
     prev_scale_dec_pressed_(false)
   {
     // --- パラメータ宣言＆取得 ---
-    declare_parameter<double>("speed_scale",      1.0);
-    declare_parameter<double>("steer_scale",      1.0);
-    declare_parameter<double>("offset_increment", 0.01);
-    declare_parameter<double>("max_steer_offset", 0.3);
-    declare_parameter<double>("min_steer_offset", -0.3);
-    declare_parameter<double>("max_speed_offset", 1.0);
-    declare_parameter<double>("min_speed_offset", -1.0);
-    declare_parameter<double>("initial_steer_offset", 0.0);
-    declare_parameter<double>("initial_speed_offset", 0.0);
+    declare_parameter<double>("speed_scale", 1.0);
+    declare_parameter<double>("steer_scale", 1.0);
 
     declare_parameter<int>("joy_button_index",   2);
     declare_parameter<int>("ack_button_index",   3);
@@ -52,24 +42,15 @@ public:
 
     declare_parameter<double>("timer_hz", 40.0);
 
-    get_parameter("speed_scale",      speed_scale_);
-    get_parameter("steer_scale",      steer_scale_);
-    get_parameter("offset_increment", offset_increment_);
-    get_parameter("max_steer_offset", max_steer_offset_);
-    get_parameter("min_steer_offset", min_steer_offset_);
-    get_parameter("max_speed_offset", max_speed_offset_);
-    get_parameter("min_speed_offset", min_speed_offset_);
-    get_parameter("initial_steer_offset", steer_offset_);
-    get_parameter("initial_speed_offset", speed_offset_);
-
-    get_parameter("joy_button_index",   joy_button_index_);
-    get_parameter("ack_button_index",   ack_button_index_);
+    get_parameter("speed_scale", speed_scale_);
+    get_parameter("steer_scale", steer_scale_);
+    get_parameter("joy_button_index", joy_button_index_);
+    get_parameter("ack_button_index", ack_button_index_);
     get_parameter("start_button_index", start_button_index_);
-    get_parameter("stop_button_index",  stop_button_index_);
-
-    get_parameter("invert_speed",  invert_speed_);
-    get_parameter("invert_steer",  invert_steer_);
-    get_parameter("timer_hz",      timer_hz_);
+    get_parameter("stop_button_index", stop_button_index_);
+    get_parameter("invert_speed", invert_speed_);
+    get_parameter("invert_steer", invert_steer_);
+    get_parameter("timer_hz", timer_hz_);
 
     last_autonomy_msg_.speed = 0.0;
     last_autonomy_msg_.steering_angle = 0.0;
@@ -77,15 +58,17 @@ public:
     // --- サブスクライバ／パブリッシャ設定 ---
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       "/joy", 10, std::bind(&JoyManagerNode::joy_callback, this, _1));
-
     ack_sub_ = create_subscription<ackermann_msgs::msg::AckermannDrive>(
       "/ackermann_cmd", 10, std::bind(&JoyManagerNode::ack_callback, this, _1));
 
-    drive_pub_ = create_publisher<ackermann_msgs::msg::AckermannDrive>(
-      "/cmd_drive", 10);
+    drive_pub_   = create_publisher<ackermann_msgs::msg::AckermannDrive>("/cmd_drive", 10);
+    trigger_pub_ = create_publisher<std_msgs::msg::Bool>("/rosbag2_recorder/trigger", 10);
 
-    trigger_pub_ = create_publisher<std_msgs::msg::Bool>(
-      "/rosbag2_recorder/trigger", 10);
+    // オフセット調整用トリガー
+    steer_inc_pub_ = create_publisher<std_msgs::msg::Bool>("/steer_offset_inc", 10);
+    steer_dec_pub_ = create_publisher<std_msgs::msg::Bool>("/steer_offset_dec", 10);
+    speed_inc_pub_ = create_publisher<std_msgs::msg::Bool>("/speed_offset_inc", 10);
+    speed_dec_pub_ = create_publisher<std_msgs::msg::Bool>("/speed_offset_dec", 10);
 
     // --- タイマー（一定周期でコマンド出力）---
     timer_ = create_wall_timer(
@@ -94,127 +77,94 @@ public:
   }
 
 private:
+  // デバウンス付きボタン検出ヘルパー
+  bool check_button_press(bool curr, bool &prev_flag) {
+    if (curr && !prev_flag) {
+      prev_flag = true;
+      return true;
+    } else if (!curr) {
+      prev_flag = false;
+    }
+    return false;
+  }
+
   void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
   {
-    // --- 0) start/stop トリガ処理（ボタン，連射防止） ---
-    bool curr_start = (start_button_index_ < (int)msg->buttons.size()
+    // 0) start/stop ボタン（連射防止）
+    bool curr_start = (msg->buttons.size() > start_button_index_
                        && msg->buttons[start_button_index_] == 1);
-    bool curr_stop  = (stop_button_index_ < (int)msg->buttons.size()
+    bool curr_stop  = (msg->buttons.size() > stop_button_index_
                        && msg->buttons[stop_button_index_]  == 1);
-
-    if (curr_start && !prev_start_pressed_) {
+    if (check_button_press(curr_start, prev_start_pressed_)) {
       std_msgs::msg::Bool b; b.data = true;
       trigger_pub_->publish(b);
-      prev_start_pressed_ = true;
-    } else if (!curr_start) {
-      prev_start_pressed_ = false;
     }
-
-    if (curr_stop && !prev_stop_pressed_) {
+    if (check_button_press(curr_stop, prev_stop_pressed_)) {
       std_msgs::msg::Bool b; b.data = false;
       trigger_pub_->publish(b);
-      prev_stop_pressed_ = true;
-    } else if (!curr_stop) {
-      prev_stop_pressed_ = false;
     }
 
-    // --- 1) joy/ack モード判定 ---
-    bool joy_pressed = (joy_button_index_ < (int)msg->buttons.size()
+    // 1) モード判定
+    bool joy_pressed = (msg->buttons.size() > joy_button_index_
                         && msg->buttons[joy_button_index_] == 1);
-    bool ack_pressed = (ack_button_index_ < (int)msg->buttons.size()
+    bool ack_pressed = (msg->buttons.size() > ack_button_index_
                         && msg->buttons[ack_button_index_] == 1);
-
     if (ack_pressed) {
-      ack_active_ = true;
-      joy_active_ = false;
+      ack_active_ = true; joy_active_ = false;
     } else if (joy_pressed) {
-      joy_active_ = true;
-      ack_active_ = false;
+      joy_active_ = true; ack_active_ = false;
     } else {
-      joy_active_ = false;
-      ack_active_ = false;
+      joy_active_ = false; ack_active_ = false;
     }
 
-    // --- 2) joy 操作からの速度・ステアリング算出（joy_active_ 時のみ）---
+    // 2) Joyモードでの速度・ステア算出
     if (joy_active_) {
       double raw_speed = (msg->axes.size() > 1 ? msg->axes[1] : 0.0);
       double raw_steer = (msg->axes.size() > 2 ? msg->axes[2] : 0.0);
-
       if (invert_speed_) raw_speed = -raw_speed;
       if (invert_steer_) raw_steer = -raw_steer;
-
-      joy_speed_ = raw_speed * speed_scale_ + speed_offset_;
-      joy_steer_ = raw_steer * steer_scale_ + steer_offset_;
+      joy_speed_ = raw_speed * speed_scale_;
+      joy_steer_ = raw_steer * steer_scale_;
     }
 
-    // --- 3) D-pad でのオフセット調整（axes[6], axes[7]，連射防止付き） ---
+    // 3) D-pad でのオフセット調整トリガー（連射防止）
     double a6 = (msg->axes.size() > 6 ? msg->axes[6] : 0.0);
     double a7 = (msg->axes.size() > 7 ? msg->axes[7] : 0.0);
 
-    // Steer offset: →(–1.0) +, ←(+1.0) –
-    bool steer_inc = (std::abs(a6 + 1.0) < 1e-3);
-    bool steer_dec = (std::abs(a6 - 1.0) < 1e-3);
-    if (steer_inc && !prev_steer_inc_pressed_) {
-      steer_offset_ = std::min(steer_offset_ + offset_increment_, max_steer_offset_);
-      steer_offset_ = std::round(steer_offset_ / offset_increment_) * offset_increment_;
-      if (std::fabs(steer_offset_) < 1e-6) steer_offset_ = 0.0;
-      RCLCPP_INFO(get_logger(), "steer_offset = %.2f", steer_offset_);
-      prev_steer_inc_pressed_ = true;
-    } else if (!steer_inc) {
-      prev_steer_inc_pressed_ = false;
+    bool steer_inc = std::abs(a6 + 1.0) < 1e-3;  // →
+    bool steer_dec = std::abs(a6 - 1.0) < 1e-3;  // ←
+    bool speed_inc = std::abs(a7 - 1.0) < 1e-3;  // ↑
+    bool speed_dec = std::abs(a7 + 1.0) < 1e-3;  // ↓
+
+    if (check_button_press(steer_inc, prev_steer_inc_pressed_)) {
+      std_msgs::msg::Bool b; b.data = true;
+      steer_inc_pub_->publish(b);
     }
-    if (steer_dec && !prev_steer_dec_pressed_) {
-      steer_offset_ = std::max(steer_offset_ - offset_increment_, min_steer_offset_);
-      steer_offset_ = std::round(steer_offset_ / offset_increment_) * offset_increment_;
-      if (std::fabs(steer_offset_) < 1e-6) steer_offset_ = 0.0;
-      RCLCPP_INFO(get_logger(), "steer_offset = %.2f", steer_offset_);
-      prev_steer_dec_pressed_ = true;
-    } else if (!steer_dec) {
-      prev_steer_dec_pressed_ = false;
+    if (check_button_press(steer_dec, prev_steer_dec_pressed_)) {
+      std_msgs::msg::Bool b; b.data = true;
+      steer_dec_pub_->publish(b);
+    }
+    if (check_button_press(speed_inc, prev_speed_inc_pressed_)) {
+      std_msgs::msg::Bool b; b.data = true;
+      speed_inc_pub_->publish(b);
+    }
+    if (check_button_press(speed_dec, prev_speed_dec_pressed_)) {
+      std_msgs::msg::Bool b; b.data = true;
+      speed_dec_pub_->publish(b);
     }
 
-    // Speed offset: ↑(+1.0) +, ↓(–1.0) –
-    bool speed_inc = (std::abs(a7 - 1.0) < 1e-3);
-    bool speed_dec = (std::abs(a7 + 1.0) < 1e-3);
-    if (speed_inc && !prev_speed_inc_pressed_) {
-      speed_offset_ = std::min(speed_offset_ + offset_increment_, max_speed_offset_);
-      speed_offset_ = std::round(speed_offset_ / offset_increment_) * offset_increment_;
-      if (std::fabs(speed_offset_) < 1e-6) speed_offset_ = 0.0;
-      RCLCPP_INFO(get_logger(), "speed_offset = %.2f", speed_offset_);
-      prev_speed_inc_pressed_ = true;
-    } else if (!speed_inc) {
-      prev_speed_inc_pressed_ = false;
-    }
-    if (speed_dec && !prev_speed_dec_pressed_) {
-      speed_offset_ = std::max(speed_offset_ - offset_increment_, min_speed_offset_);
-      speed_offset_ = std::round(speed_offset_ / offset_increment_) * offset_increment_;
-      if (std::fabs(speed_offset_) < 1e-6) speed_offset_ = 0.0;
-      RCLCPP_INFO(get_logger(), "speed_offset = %.2f", speed_offset_);
-      prev_speed_dec_pressed_ = true;
-    } else if (!speed_dec) {
-      prev_speed_dec_pressed_ = false;
-    }
-
-    // --- 4) steer_scale の動的調整（R1/L1，連射防止，0.1刻み） ---
+    // 4) R1/L1 での steer_scale 動的調整（連射防止）
     bool scale_inc = (msg->buttons.size() > 5 && msg->buttons[5] == 1); // R1
     bool scale_dec = (msg->buttons.size() > 4 && msg->buttons[4] == 1); // L1
-
-    if (scale_inc && !prev_scale_inc_pressed_) {
+    if (check_button_press(scale_inc, prev_scale_inc_pressed_)) {
       steer_scale_ = std::round((steer_scale_ + 0.1) * 10.0) / 10.0;
       if (steer_scale_ < 0.1) steer_scale_ = 0.1;
       RCLCPP_INFO(get_logger(), "steer_scale = %.1f", steer_scale_);
-      prev_scale_inc_pressed_ = true;
-    } else if (!scale_inc) {
-      prev_scale_inc_pressed_ = false;
     }
-
-    if (scale_dec && !prev_scale_dec_pressed_) {
+    if (check_button_press(scale_dec, prev_scale_dec_pressed_)) {
       steer_scale_ = std::max(steer_scale_ - 0.1, 0.0);
       steer_scale_ = std::round(steer_scale_ * 10.0) / 10.0;
       RCLCPP_INFO(get_logger(), "steer_scale = %.1f", steer_scale_);
-      prev_scale_dec_pressed_ = true;
-    } else if (!scale_dec) {
-      prev_scale_dec_pressed_ = false;
     }
   }
 
@@ -231,7 +181,7 @@ private:
       out.speed          = joy_speed_;
       out.steering_angle = joy_steer_;
     } else if (ack_active_) {
-      out = last_autonomy_msg_;
+      out = last_autonomy_msg_;  // オフセット加算は行わない
     } else {
       out.speed          = 0.0;
       out.steering_angle = 0.0;
@@ -240,16 +190,19 @@ private:
   }
 
   // --- メンバ変数 ---
-  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
+  // サブスク／パブリッシャ
+  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr           joy_sub_;
   rclcpp::Subscription<ackermann_msgs::msg::AckermannDrive>::SharedPtr ack_sub_;
   rclcpp::Publisher<ackermann_msgs::msg::AckermannDrive>::SharedPtr drive_pub_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr trigger_pub_;
-  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                trigger_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                steer_inc_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                steer_dec_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                speed_inc_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                speed_dec_pub_;
+  rclcpp::TimerBase::SharedPtr                                     timer_;
 
   // パラメータ
-  double speed_scale_, steer_scale_, offset_increment_;
-  double max_steer_offset_, min_steer_offset_;
-  double max_speed_offset_, min_speed_offset_;
+  double speed_scale_, steer_scale_;
   bool invert_speed_, invert_steer_;
   int joy_button_index_, ack_button_index_;
   int start_button_index_, stop_button_index_;
@@ -258,8 +211,8 @@ private:
   // 状態
   bool joy_active_, ack_active_;
   double joy_speed_, joy_steer_;
-  double steer_offset_, speed_offset_;
   ackermann_msgs::msg::AckermannDrive last_autonomy_msg_;
+  bool ack_received_{false};
 
   // 連射防止フラグ
   bool prev_start_pressed_, prev_stop_pressed_;
